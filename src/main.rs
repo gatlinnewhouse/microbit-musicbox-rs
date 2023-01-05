@@ -2,21 +2,24 @@
 #![no_main]
 
 extern crate microbit as bsp; // board support package
-extern crate nrf52833_hal as hal; // hardware abstraction layer
 
 use defmt_rtt as _;
 use panic_probe as _;
 
 #[rtic::app(device = bsp::pac, peripherals = true, dispatchers = [SWI0_EGU0])]
 mod app {
+    use bsp::hal::prelude::*;
     use bsp::{
         hal::{
             gpio::{Input, Pin, PullUp},
-            gpiote::Gpiote,
+            gpiote::*,
         },
         Board,
     };
-    use hal::prelude::*;
+    use systick_monotonic::*;
+
+    #[monotonic(binds = SysTick, default = true)]
+    type Timer = Systick<100>;
 
     #[shared]
     struct Shared {
@@ -31,14 +34,22 @@ mod app {
 
     #[init]
     fn init(ctx: init::Context) -> (Shared, Local, init::Monotonics) {
-        defmt::info!("init musicbox");
+        defmt::debug!("init musicbox");
 
         let Board {
-            buttons, GPIOTE, ..
+            mut display_pins,
+            buttons,
+            GPIOTE,
+            SYST,
+            ..
         } = Board::new(ctx.device, ctx.core);
 
         let btn1 = buttons.button_a.into_pullup_input().degrade();
         let btn2 = buttons.button_b.into_pullup_input().degrade();
+
+        let _ = display_pins.row3.set_high();
+        let led1 = display_pins.col1.degrade();
+        let led2 = display_pins.col5.degrade();
 
         let gpiote = Gpiote::new(GPIOTE);
 
@@ -52,43 +63,65 @@ mod app {
             .input_pin(&btn2)
             .hi_to_lo()
             .enable_interrupt();
+        gpiote
+            .channel2()
+            .output_pin(led1)
+            .task_out_polarity(TaskOutPolarity::Toggle)
+            .init_high();
+        gpiote
+            .channel3()
+            .output_pin(led2)
+            .task_out_polarity(TaskOutPolarity::Toggle)
+            .init_high();
 
-        (Shared { gpiote }, Local { btn1, btn2 }, init::Monotonics())
+        let mono = Systick::new(SYST, 64_000_000);
+
+        (
+            Shared { gpiote },
+            Local { btn1, btn2 },
+            init::Monotonics(mono),
+        )
     }
 
     #[task(binds = GPIOTE, shared = [gpiote])]
     fn on_gpiote(mut ctx: on_gpiote::Context) {
-        defmt::info!("gpiote interrupt");
+        defmt::debug!("gpiote interrupt");
         ctx.shared.gpiote.lock(|gpiote| {
             gpiote.reset_events();
 
-            handle_btn_event::spawn().unwrap();
+            handle_btn_event::spawn_after(50.millis()).ok();
         });
     }
 
-    #[task(local = [btn1, btn2])]
-    fn handle_btn_event(ctx: handle_btn_event::Context) {
+    #[task(shared = [gpiote], local = [btn1, btn2])]
+    fn handle_btn_event(mut ctx: handle_btn_event::Context) {
         let btn1_pressed = ctx.local.btn1.is_low().unwrap();
         let btn2_pressed = ctx.local.btn2.is_low().unwrap();
 
-        match (btn1_pressed, btn2_pressed) {
-            (true, true) => {
-                defmt::info!("A + B");
-            }
-            (true, false) => {
-                defmt::info!("A");
-            }
-            (false, true) => {
-                defmt::info!("B");
-            }
-            (false, false) => {}
-        }
+        ctx.shared
+            .gpiote
+            .lock(|gpiote| match (btn1_pressed, btn2_pressed) {
+                (true, true) => {
+                    defmt::info!("A + B");
+                    gpiote.channel2().clear();
+                    gpiote.channel3().clear();
+                }
+                (true, false) => {
+                    defmt::info!("A");
+                    gpiote.channel2().out();
+                }
+                (false, true) => {
+                    defmt::info!("B");
+                    gpiote.channel3().out();
+                }
+                (false, false) => {}
+            });
     }
 
     #[idle]
     fn idle(_ctx: idle::Context) -> ! {
         loop {
-            cortex_m::asm::nop();
+            cortex_m::asm::wfi();
         }
     }
 }

@@ -8,10 +8,10 @@ edition = "2021"
 [dependencies]
 cortex-m = { version = "0.7.7", features = ["critical-section-single-core"] }
 cortex-m-rtic = "1.1.3"
+systick-monotonic = "1.0.1"
 
 embedded-hal = "0.2.7"
 microbit-v2 = "0.13.0"
-nrf52833-hal = "0.16.0"
 
 defmt = "0.3.2"
 defmt-rtt = "0.4.0"

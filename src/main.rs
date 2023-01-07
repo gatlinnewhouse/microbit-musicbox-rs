@@ -8,12 +8,9 @@ use panic_probe as _;
 
 #[rtic::app(device = bsp::pac, peripherals = true, dispatchers = [SWI0_EGU0])]
 mod app {
-    use bsp::hal::prelude::*;
     use bsp::{
-        hal::{
-            gpio::{Input, Pin, PullUp},
-            gpiote::*,
-        },
+        hal::{clocks::*, gpio::*, gpiote::*, prelude::*, rtc::*},
+        pac::RTC0,
         Board,
     };
     use systick_monotonic::*;
@@ -23,13 +20,14 @@ mod app {
 
     #[shared]
     struct Shared {
-        gpiote: Gpiote,
+        btn1: Pin<Input<PullUp>>,
+        btn2: Pin<Input<PullUp>>,
     }
 
     #[local]
     struct Local {
-        btn1: Pin<Input<PullUp>>,
-        btn2: Pin<Input<PullUp>>,
+        gpiote: Gpiote,
+        rtc0: Rtc<RTC0>,
     }
 
     #[init]
@@ -37,19 +35,26 @@ mod app {
         defmt::debug!("init musicbox");
 
         let Board {
-            mut display_pins,
             buttons,
             GPIOTE,
             SYST,
+            CLOCK,
+            RTC0,
             ..
         } = Board::new(ctx.device, ctx.core);
 
+        // Starting the low-frequency clock (needed for RTC to work)
+        Clocks::new(CLOCK).start_lfclk();
+
+        // RTC at 100Hz (32_768 / (327 + 1))
+        // 100Hz; 10ms period
+        let mut rtc0 = Rtc::new(RTC0, 327).unwrap();
+        rtc0.enable_event(RtcInterrupt::Tick);
+        rtc0.enable_interrupt(RtcInterrupt::Tick, None);
+        rtc0.enable_counter();
+
         let btn1 = buttons.button_a.into_pullup_input().degrade();
         let btn2 = buttons.button_b.into_pullup_input().degrade();
-
-        let _ = display_pins.row3.set_high();
-        let led1 = display_pins.col1.degrade();
-        let led2 = display_pins.col5.degrade();
 
         let gpiote = Gpiote::new(GPIOTE);
 
@@ -63,59 +68,42 @@ mod app {
             .input_pin(&btn2)
             .hi_to_lo()
             .enable_interrupt();
-        gpiote
-            .channel2()
-            .output_pin(led1)
-            .task_out_polarity(TaskOutPolarity::Toggle)
-            .init_high();
-        gpiote
-            .channel3()
-            .output_pin(led2)
-            .task_out_polarity(TaskOutPolarity::Toggle)
-            .init_high();
 
         let mono = Systick::new(SYST, 64_000_000);
 
         (
-            Shared { gpiote },
-            Local { btn1, btn2 },
+            Shared { btn1, btn2 },
+            Local { gpiote, rtc0 },
             init::Monotonics(mono),
         )
     }
 
-    #[task(binds = GPIOTE, shared = [gpiote])]
-    fn on_gpiote(mut ctx: on_gpiote::Context) {
+    #[task(binds = GPIOTE, local = [gpiote], shared = [btn1, btn2])]
+    fn on_gpiote(ctx: on_gpiote::Context) {
         defmt::debug!("gpiote interrupt");
-        ctx.shared.gpiote.lock(|gpiote| {
-            gpiote.reset_events();
+        ctx.local.gpiote.reset_events();
 
-            handle_btn_event::spawn_after(50.millis()).ok();
+        let on_gpiote::SharedResources { btn1, btn2 } = ctx.shared;
+
+        (btn1, btn2).lock(|btn1, btn2| {
+            let btn1_pressed = btn1.is_low().unwrap();
+            let btn2_pressed = btn2.is_low().unwrap();
+
+            match (btn1_pressed, btn2_pressed) {
+                (true, true) => defmt::info!("button pressed: A + B"),
+                (true, false) => defmt::info!("button pressed: A"),
+                (false, true) => defmt::info!("button pressed: B"),
+                _ => {}
+            }
         });
     }
 
-    #[task(shared = [gpiote], local = [btn1, btn2])]
-    fn handle_btn_event(mut ctx: handle_btn_event::Context) {
-        let btn1_pressed = ctx.local.btn1.is_low().unwrap();
-        let btn2_pressed = ctx.local.btn2.is_low().unwrap();
+    #[task(binds = RTC0, priority = 2, local = [rtc0], shared = [btn1, btn2])]
+    fn rtc0(ctx: rtc0::Context) {
+        defmt::debug!("rtc0 interrupt");
+        let rtc0::LocalResources { rtc0 } = ctx.local;
 
-        ctx.shared
-            .gpiote
-            .lock(|gpiote| match (btn1_pressed, btn2_pressed) {
-                (true, true) => {
-                    defmt::info!("A + B");
-                    gpiote.channel2().clear();
-                    gpiote.channel3().clear();
-                }
-                (true, false) => {
-                    defmt::info!("A");
-                    gpiote.channel2().out();
-                }
-                (false, true) => {
-                    defmt::info!("B");
-                    gpiote.channel3().out();
-                }
-                (false, false) => {}
-            });
+        rtc0.reset_event(RtcInterrupt::Tick);
     }
 
     #[idle]

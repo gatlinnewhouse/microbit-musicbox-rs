@@ -3,107 +3,98 @@
 
 extern crate microbit as bsp; // board support package
 
+mod button;
+
 use defmt_rtt as _;
 use panic_probe as _;
 
 #[rtic::app(device = bsp::pac, peripherals = true, dispatchers = [SWI0_EGU0])]
 mod app {
-    use bsp::{
-        hal::{clocks::*, gpio::*, gpiote::*, prelude::*, rtc::*},
-        pac::RTC0,
-        Board,
-    };
-    use systick_monotonic::*;
+    use bsp::hal::clocks::Clocks;
+    use bsp::hal::rtc::{Rtc, RtcInterrupt};
+    use bsp::pac::RTC0;
+    use bsp::Board;
+    use systick_monotonic::Systick;
+
+    use crate::button;
 
     #[monotonic(binds = SysTick, default = true)]
-    type Timer = Systick<100>;
+    type Timer = Systick<1_000>; // 1000 Hz / 1 ms granularity
 
     #[shared]
     struct Shared {
-        btn1: Pin<Input<PullUp>>,
-        btn2: Pin<Input<PullUp>>,
+        btn1: button::Button<1_000>,
+        btn2: button::Button<1_000>,
     }
 
     #[local]
     struct Local {
-        gpiote: Gpiote,
         rtc0: Rtc<RTC0>,
     }
 
     #[init]
     fn init(ctx: init::Context) -> (Shared, Local, init::Monotonics) {
-        defmt::debug!("init musicbox");
+        defmt::info!("init musicbox");
 
-        let Board {
-            buttons,
-            GPIOTE,
-            SYST,
-            CLOCK,
-            RTC0,
-            ..
-        } = Board::new(ctx.device, ctx.core);
+        let board = Board::new(ctx.device, ctx.core);
 
         // Starting the low-frequency clock (needed for RTC to work)
-        Clocks::new(CLOCK).start_lfclk();
+        Clocks::new(board.CLOCK).start_lfclk();
 
         // RTC at 100Hz (32_768 / (327 + 1))
         // 100Hz; 10ms period
-        let mut rtc0 = Rtc::new(RTC0, 327).unwrap();
+        let mut rtc0 = Rtc::new(board.RTC0, 327).unwrap();
         rtc0.enable_event(RtcInterrupt::Tick);
         rtc0.enable_interrupt(RtcInterrupt::Tick, None);
         rtc0.enable_counter();
 
-        let btn1 = buttons.button_a.into_pullup_input().degrade();
-        let btn2 = buttons.button_b.into_pullup_input().degrade();
+        // Button A
+        let btn1 = {
+            let pin = board.buttons.button_a.into_pullup_input().degrade();
+            let mut btn = button::Button::new(pin);
+            btn.attach_event(|event| {
+                handle_btn1_event::spawn(event).ok();
+            });
+            btn
+        };
 
-        let gpiote = Gpiote::new(GPIOTE);
+        // Button B
+        let btn2 = {
+            let pin = board.buttons.button_b.into_pullup_input().degrade();
+            let mut btn = button::Button::new(pin);
+            btn.attach_event(|event| {
+                handle_btn2_event::spawn(event).ok();
+            });
+            btn
+        };
 
-        gpiote
-            .channel0()
-            .input_pin(&btn1)
-            .hi_to_lo()
-            .enable_interrupt();
-        gpiote
-            .channel1()
-            .input_pin(&btn2)
-            .hi_to_lo()
-            .enable_interrupt();
-
-        let mono = Systick::new(SYST, 64_000_000);
+        // Initialize the monotonic clock based on system time running at 64MHz
+        let mono = Systick::new(board.SYST, 64_000_000);
 
         (
             Shared { btn1, btn2 },
-            Local { gpiote, rtc0 },
+            Local { rtc0 },
             init::Monotonics(mono),
         )
     }
 
-    #[task(binds = GPIOTE, local = [gpiote], shared = [btn1, btn2])]
-    fn on_gpiote(ctx: on_gpiote::Context) {
-        defmt::debug!("gpiote interrupt");
-        ctx.local.gpiote.reset_events();
+    #[task(priority = 1, binds = RTC0, local = [rtc0], shared = [btn1, btn2])]
+    fn rtc0(mut ctx: rtc0::Context) {
+        ctx.local.rtc0.reset_event(RtcInterrupt::Tick);
 
-        let on_gpiote::SharedResources { btn1, btn2 } = ctx.shared;
-
-        (btn1, btn2).lock(|btn1, btn2| {
-            let btn1_pressed = btn1.is_low().unwrap();
-            let btn2_pressed = btn2.is_low().unwrap();
-
-            match (btn1_pressed, btn2_pressed) {
-                (true, true) => defmt::info!("button pressed: A + B"),
-                (true, false) => defmt::info!("button pressed: A"),
-                (false, true) => defmt::info!("button pressed: B"),
-                _ => {}
-            }
-        });
+        let now = monotonics::now();
+        ctx.shared.btn1.lock(|btn| btn.tick(now));
+        ctx.shared.btn2.lock(|btn| btn.tick(now));
     }
 
-    #[task(binds = RTC0, priority = 2, local = [rtc0], shared = [btn1, btn2])]
-    fn rtc0(ctx: rtc0::Context) {
-        defmt::debug!("rtc0 interrupt");
-        let rtc0::LocalResources { rtc0 } = ctx.local;
+    #[task]
+    fn handle_btn1_event(_ctx: handle_btn1_event::Context, event: button::Event) {
+        defmt::info!("btn1 event: {:?}", &event);
+    }
 
-        rtc0.reset_event(RtcInterrupt::Tick);
+    #[task]
+    fn handle_btn2_event(_ctx: handle_btn2_event::Context, event: button::Event) {
+        defmt::info!("btn2 event: {:?}", &event);
     }
 
     #[idle]

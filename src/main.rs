@@ -20,11 +20,12 @@ mod app {
 
     #[monotonic(binds = SysTick, default = true)]
     type Timer = Systick<1_000>; // 1000 Hz / 1 ms granularity
+    type Button = button::Button<1_000>;
 
     #[shared]
     struct Shared {
-        btn1: button::Button<1_000>,
-        btn2: button::Button<1_000>,
+        btn1: Button,
+        btn2: Button,
     }
 
     #[local]

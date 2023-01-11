@@ -15,12 +15,12 @@ pub enum Event {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum State {
-    INIT = 0,
-    DOWN = 1,
-    UP = 2,
-    COUNT = 3,
-    PRESS = 6,
-    PRESSEND = 7,
+    Init = 0,
+    Down = 1,
+    Up = 2,
+    Count = 3,
+    Press = 6,
+    Pressend = 7,
 }
 
 pub struct Button<const TIMER_HZ: u32> {
@@ -41,8 +41,8 @@ impl<const TIMER_HZ: u32> Button<TIMER_HZ> {
     pub fn new(pin: Pin<Input<PullUp>>) -> Self {
         Self {
             pin,
-            state: State::INIT,
-            last_state: State::INIT,
+            state: State::Init,
+            last_state: State::Init,
 
             attach_event_fn: None,
 
@@ -63,8 +63,8 @@ impl<const TIMER_HZ: u32> Button<TIMER_HZ> {
     }
 
     pub fn reset(&mut self) {
-        self.state = State::INIT;
-        self.last_state = State::INIT;
+        self.state = State::Init;
+        self.last_state = State::Init;
         self.cnt_click = 0;
         self.start_time = TimerInstantU64::from_ticks(0);
     }
@@ -75,67 +75,64 @@ impl<const TIMER_HZ: u32> Button<TIMER_HZ> {
 
         use State::*;
         match self.state {
-            INIT => {
+            Init => {
                 if active {
-                    self.update_state(DOWN);
+                    self.update_state(Down);
                     self.cnt_click = 0;
                     self.start_time = now;
                 }
             }
-            DOWN => {
+            Down => {
                 if !active && (wait_time < self.debounce_ms) {
                     self.update_state(self.last_state);
                 } else if !active {
-                    self.update_state(UP);
+                    self.update_state(Up);
                 } else if active && (wait_time > self.press_ms) {
                     // long pressed start
-                    self.update_state(PRESS);
-                    self.attach_event_fn.map(|f| f(Event::LongPressStart));
+                    self.update_state(Press);
+                    if let Some(f) = self.attach_event_fn {
+                        f(Event::LongPressStart)
+                    }
                 }
             }
-            UP => {
+            Up => {
                 if active && (wait_time < self.debounce_ms) {
                     self.update_state(self.last_state);
                 } else if wait_time >= self.debounce_ms {
                     self.cnt_click += 1;
-                    self.update_state(COUNT);
+                    self.update_state(Count);
                 }
             }
-            COUNT => {
+            Count => {
                 if active {
-                    self.update_state(DOWN);
+                    self.update_state(Down);
                     self.start_time = now;
                 } else if wait_time > self.click_ms {
-                    match self.cnt_click {
-                        1 => {
-                            // single click
-                            self.attach_event_fn.map(|f| f(Event::Click));
-                        }
-                        2 => {
-                            // double click
-                            self.attach_event_fn.map(|f| f(Event::DoubleClick));
-                        }
-                        cnt => {
-                            // multi click
-                            self.attach_event_fn.map(|f| f(Event::MultiClick(cnt)));
+                    if let Some(f) = self.attach_event_fn {
+                        match self.cnt_click {
+                            1 => f(Event::Click),
+                            2 => f(Event::DoubleClick),
+                            cnt => f(Event::MultiClick(cnt)),
                         }
                     }
                     self.reset();
                 }
             }
-            PRESS => {
+            Press => {
                 if !active {
-                    self.update_state(PRESSEND);
+                    self.update_state(Pressend);
                     self.start_time = now;
-                } else {
-                    self.attach_event_fn.map(|f| f(Event::LongPressDuring));
+                } else if let Some(f) = self.attach_event_fn {
+                    f(Event::LongPressDuring)
                 }
             }
-            PRESSEND => {
+            Pressend => {
                 if active && (wait_time < self.debounce_ms) {
                     self.update_state(self.last_state);
                 } else if wait_time > self.debounce_ms {
-                    self.attach_event_fn.map(|f| f(Event::LongPressStop));
+                    if let Some(f) = self.attach_event_fn {
+                        f(Event::LongPressStop)
+                    }
                     self.reset();
                 }
             }

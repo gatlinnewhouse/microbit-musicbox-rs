@@ -27,14 +27,14 @@ pub struct Button<const TIMER_HZ: u32> {
     pin: Pin<Input<PullUp>>,
     state: State,
     last_state: State,
+    cnt_click: u32, // count the number of clicks
     attach_event_fn: Option<fn(Event)>,
-
-    debounce_ms: TimerDurationU64<TIMER_HZ>, // duration of ticks for debounce times
-    click_ms: TimerDurationU64<TIMER_HZ>,    // duration of msecs before a click is detected.
+    time: TimerInstantU64<TIMER_HZ>,         // record now time
+    start_time: TimerInstantU64<TIMER_HZ>,   // start of current input change to checking debouncing
+    debounce_ms: TimerDurationU64<TIMER_HZ>, // duration of msecs for debounce times
+    click_ms: TimerDurationU64<TIMER_HZ>,    // duration of msecs before a click is detected
     press_ms: TimerDurationU64<TIMER_HZ>, // duration of msecs before a long button press is detected
-
-    cnt_click: u32,                        // count the number of clicks
-    start_time: TimerInstantU64<TIMER_HZ>, // start of current input change to checking debouncing
+    hotkey_ms: TimerDurationU64<TIMER_HZ>,   // duration of msecs before a hotkey is detected
 }
 
 impl<const TIMER_HZ: u32> Button<TIMER_HZ> {
@@ -43,14 +43,14 @@ impl<const TIMER_HZ: u32> Button<TIMER_HZ> {
             pin,
             state: State::Init,
             last_state: State::Init,
-
+            cnt_click: 0,
             attach_event_fn: None,
-
+            time: TimerInstantU64::from_ticks(0),
+            start_time: TimerInstantU64::from_ticks(0),
             debounce_ms: 50.millis(),
             click_ms: 400.millis(),
             press_ms: 800.millis(),
-            cnt_click: 0,
-            start_time: TimerInstantU64::from_ticks(0),
+            hotkey_ms: 200.millis(),
         }
     }
 
@@ -66,11 +66,15 @@ impl<const TIMER_HZ: u32> Button<TIMER_HZ> {
         self.state = State::Init;
         self.last_state = State::Init;
         self.cnt_click = 0;
+        self.time = TimerInstantU64::from_ticks(0);
         self.start_time = TimerInstantU64::from_ticks(0);
     }
 
-    pub fn tick(&mut self, now: fugit::TimerInstantU64<TIMER_HZ>) {
+    pub fn tick(&mut self) {
+        self.update_time();
+
         let active = self.pin.is_low().unwrap();
+        let now = self.time;
         let wait_time = now - self.start_time;
 
         use State::*;
@@ -137,6 +141,10 @@ impl<const TIMER_HZ: u32> Button<TIMER_HZ> {
                 }
             }
         }
+    }
+
+    fn update_time(&mut self) {
+        self.time += TimerDurationU64::from_ticks(1);
     }
 
     fn update_state(&mut self, state: State) {

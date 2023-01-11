@@ -20,7 +20,7 @@ mod app {
 
     #[monotonic(binds = SysTick, default = true)]
     type Timer = Systick<1_000>; // 1000 Hz / 1 ms granularity
-    type Button = button::Button<1_000>;
+    type Button = button::Button<100>; // working frequency 100Hz (rtc0)
 
     #[shared]
     struct Shared {
@@ -52,7 +52,7 @@ mod app {
         // Button A
         let btn1 = {
             let pin = board.buttons.button_a.into_pullup_input().degrade();
-            let mut btn = button::Button::new(pin);
+            let mut btn = Button::new(pin);
             btn.attach_event(|event| {
                 handle_btn1_event::spawn(event).ok();
             });
@@ -62,7 +62,7 @@ mod app {
         // Button B
         let btn2 = {
             let pin = board.buttons.button_b.into_pullup_input().degrade();
-            let mut btn = button::Button::new(pin);
+            let mut btn = Button::new(pin);
             btn.attach_event(|event| {
                 handle_btn2_event::spawn(event).ok();
             });
@@ -82,10 +82,8 @@ mod app {
     #[task(priority = 1, binds = RTC0, local = [rtc0], shared = [btn1, btn2])]
     fn rtc0(mut ctx: rtc0::Context) {
         ctx.local.rtc0.reset_event(RtcInterrupt::Tick);
-
-        let now = monotonics::now();
-        ctx.shared.btn1.lock(|btn| btn.tick(now));
-        ctx.shared.btn2.lock(|btn| btn.tick(now));
+        ctx.shared.btn1.lock(|btn| btn.tick());
+        ctx.shared.btn2.lock(|btn| btn.tick());
     }
 
     #[task]

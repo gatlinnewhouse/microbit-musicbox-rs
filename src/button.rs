@@ -27,14 +27,13 @@ pub struct Button<const TIMER_HZ: u32> {
     pin: Pin<Input<PullUp>>,
     state: State,
     last_state: State,
-    cnt_click: u32, // count the number of clicks
+    cnt_click: u32,
     attach_event_fn: Option<fn(Event)>,
-    time: TimerInstantU64<TIMER_HZ>,         // record now time
-    start_time: TimerInstantU64<TIMER_HZ>,   // start of current input change to checking debouncing
-    debounce_ms: TimerDurationU64<TIMER_HZ>, // duration of msecs for debounce times
-    click_ms: TimerDurationU64<TIMER_HZ>,    // duration of msecs before a click is detected
-    press_ms: TimerDurationU64<TIMER_HZ>, // duration of msecs before a long button press is detected
-    hotkey_ms: TimerDurationU64<TIMER_HZ>,   // duration of msecs before a hotkey is detected
+    time: TimerInstantU64<TIMER_HZ>,
+    start_time: TimerInstantU64<TIMER_HZ>,
+    debounce_ms: TimerDurationU64<TIMER_HZ>,
+    click_ms: TimerDurationU64<TIMER_HZ>,
+    press_ms: TimerDurationU64<TIMER_HZ>,
 }
 
 impl<const TIMER_HZ: u32> Button<TIMER_HZ> {
@@ -50,8 +49,19 @@ impl<const TIMER_HZ: u32> Button<TIMER_HZ> {
             debounce_ms: 50.millis(),
             click_ms: 400.millis(),
             press_ms: 800.millis(),
-            hotkey_ms: 200.millis(),
         }
+    }
+
+    pub fn set_debounce_ms(&mut self, debounce_ms: TimerDurationU64<TIMER_HZ>) {
+        self.debounce_ms = debounce_ms;
+    }
+
+    pub fn set_click_ms(&mut self, click_ms: TimerDurationU64<TIMER_HZ>) {
+        self.click_ms = click_ms;
+    }
+
+    pub fn set_press_ms(&mut self, press_ms: TimerDurationU64<TIMER_HZ>) {
+        self.press_ms = press_ms;
     }
 
     pub fn attach_event(&mut self, f: fn(Event)) {
@@ -92,7 +102,6 @@ impl<const TIMER_HZ: u32> Button<TIMER_HZ> {
                 } else if !active {
                     self.update_state(Up);
                 } else if active && (wait_time > self.press_ms) {
-                    // long pressed start
                     self.update_state(Press);
                     if let Some(f) = self.attach_event_fn {
                         f(Event::LongPressStart)

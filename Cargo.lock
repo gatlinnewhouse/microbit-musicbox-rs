@@ -280,6 +280,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "db04bc24a18b9ea980628ecf00e6c0264f3c1426dac36c00cb49b6fbad8b0743"
 dependencies = [
  "atomic-polyfill",
+ "defmt",
  "hash32",
  "rustc_version 0.4.0",
  "spin",
@@ -307,6 +308,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "memchr"
+version = "2.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2dffe52ecf27772e601905b7522cb4ef790d2cc203488bbd0e2fe85fcb74566d"
+
+[[package]]
 name = "microbit-common"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -327,6 +334,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "minimal-lexical"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
+
+[[package]]
 name = "musicbox"
 version = "0.1.0"
 dependencies = [
@@ -336,7 +349,9 @@ dependencies = [
  "defmt-rtt",
  "embedded-hal",
  "fugit",
+ "heapless",
  "microbit-v2",
+ "nom",
  "panic-probe",
  "systick-monotonic",
 ]
@@ -355,6 +370,16 @@ name = "nb"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "546c37ac5d9e56f55e73b677106873d9d9f5190605e41a856503623648488cae"
+
+[[package]]
+name = "nom"
+version = "7.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5507769c4919c998e69e49c839d9dc6e693ede4cc4290d6ad8b41d4f09c548c"
+dependencies = [
+ "memchr",
+ "minimal-lexical",
+]
 
 [[package]]
 name = "nrf-hal-common"

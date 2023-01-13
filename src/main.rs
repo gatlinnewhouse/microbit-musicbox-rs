@@ -4,6 +4,7 @@
 extern crate microbit as bsp; // board support package
 
 mod button;
+mod music;
 
 use defmt_rtt as _;
 use panic_probe as _;

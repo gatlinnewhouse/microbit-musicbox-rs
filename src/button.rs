@@ -15,7 +15,7 @@ pub enum Event {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum State {
-    Init = 0,
+    Pending = 0,
     Down = 1,
     Up = 2,
     Count = 3,
@@ -40,8 +40,8 @@ impl<const TIMER_HZ: u32> Button<TIMER_HZ> {
     pub fn new(pin: Pin<Input<PullUp>>) -> Self {
         Self {
             pin,
-            state: State::Init,
-            last_state: State::Init,
+            state: State::Pending,
+            last_state: State::Pending,
             cnt_click: 0,
             attach_event_fn: None,
             time: TimerInstantU64::from_ticks(0),
@@ -73,23 +73,21 @@ impl<const TIMER_HZ: u32> Button<TIMER_HZ> {
     }
 
     pub fn reset(&mut self) {
-        self.state = State::Init;
-        self.last_state = State::Init;
+        self.state = State::Pending;
+        self.last_state = State::Pending;
         self.cnt_click = 0;
         self.time = TimerInstantU64::from_ticks(0);
         self.start_time = TimerInstantU64::from_ticks(0);
     }
 
     pub fn tick(&mut self) {
-        self.update_time();
-
         let active = self.pin.is_low().unwrap();
-        let now = self.time;
+        let now = self.now();
         let wait_time = now - self.start_time;
 
         use State::*;
         match self.state {
-            Init => {
+            Pending => {
                 if active {
                     self.update_state(Down);
                     self.cnt_click = 0;
@@ -152,8 +150,11 @@ impl<const TIMER_HZ: u32> Button<TIMER_HZ> {
         }
     }
 
-    fn update_time(&mut self) {
-        self.time += TimerDurationU64::from_ticks(1);
+    fn now(&mut self) -> TimerInstantU64<TIMER_HZ> {
+        if self.state != State::Pending {
+            self.time += TimerDurationU64::from_ticks(1);
+        }
+        self.time
     }
 
     fn update_state(&mut self, state: State) {

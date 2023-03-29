@@ -1,5 +1,7 @@
-use bsp::hal::gpio::{Input, Pin, PullUp};
-use bsp::hal::prelude::*;
+use bsp::hal::{
+    gpio::{Input, Pin, PullUp},
+    prelude::*,
+};
 use defmt::Format;
 use fugit::{ExtU64, TimerDurationU64, TimerInstantU64};
 
@@ -81,11 +83,12 @@ impl<const TIMER_HZ: u32> Button<TIMER_HZ> {
     }
 
     pub fn tick(&mut self) {
+        use State::*;
+
         let active = self.pin.is_low().unwrap();
         let now = self.now();
         let wait_time = now - self.start_time;
 
-        use State::*;
         match self.state {
             Pending => {
                 if active {
@@ -95,21 +98,15 @@ impl<const TIMER_HZ: u32> Button<TIMER_HZ> {
                 }
             }
             Down => {
-                if !active && (wait_time < self.debounce_ms) {
-                    self.update_state(self.last_state);
-                } else if !active {
+                if !active && wait_time > self.debounce_ms {
                     self.update_state(Up);
-                } else if active && (wait_time > self.press_ms) {
+                } else if active && wait_time > self.press_ms {
                     self.update_state(Press);
-                    if let Some(f) = self.attach_event_fn {
-                        f(Event::LongPressStart)
-                    }
+                    self.attach_event_fn.map(|f| f(Event::LongPressStart));
                 }
             }
             Up => {
-                if active && (wait_time < self.debounce_ms) {
-                    self.update_state(self.last_state);
-                } else if wait_time >= self.debounce_ms {
+                if active && wait_time >= self.debounce_ms {
                     self.cnt_click += 1;
                     self.update_state(Count);
                 }
@@ -119,13 +116,13 @@ impl<const TIMER_HZ: u32> Button<TIMER_HZ> {
                     self.update_state(Down);
                     self.start_time = now;
                 } else if wait_time > self.click_ms {
-                    if let Some(f) = self.attach_event_fn {
-                        match self.cnt_click {
-                            1 => f(Event::Click),
-                            2 => f(Event::DoubleClick),
-                            cnt => f(Event::MultiClick(cnt)),
-                        }
-                    }
+                    self.attach_event_fn.map(|f| {
+                        f(match self.cnt_click {
+                            1 => Event::Click,
+                            2 => Event::DoubleClick,
+                            cnt => Event::MultiClick(cnt),
+                        })
+                    });
                     self.reset();
                 }
             }
@@ -150,6 +147,7 @@ impl<const TIMER_HZ: u32> Button<TIMER_HZ> {
         }
     }
 
+    #[inline]
     fn now(&mut self) -> TimerInstantU64<TIMER_HZ> {
         if self.state != State::Pending {
             self.time += TimerDurationU64::from_ticks(1);
@@ -157,6 +155,7 @@ impl<const TIMER_HZ: u32> Button<TIMER_HZ> {
         self.time
     }
 
+    #[inline]
     fn update_state(&mut self, state: State) {
         self.last_state = self.state;
         self.state = state;

@@ -4,7 +4,7 @@
 extern crate microbit as bsp; // board support package
 
 mod button;
-mod music;
+mod note;
 
 use defmt_rtt as _;
 use panic_probe as _;
@@ -15,12 +15,9 @@ mod app {
     use bsp::hal::rtc::{Rtc, RtcInterrupt};
     use bsp::pac::RTC0;
     use bsp::Board;
-    use systick_monotonic::Systick;
 
     use crate::button;
 
-    #[monotonic(binds = SysTick, default = true)]
-    type Timer = Systick<1_000>; // 1000 Hz / 1 ms granularity
     type Button = button::Button<100>; // working frequency 100Hz (rtc0)
 
     #[shared]
@@ -50,7 +47,7 @@ mod app {
         rtc0.enable_interrupt(RtcInterrupt::Tick, None);
         rtc0.enable_counter();
 
-        // Button A
+        // Button A (working rtc0)
         let btn1 = {
             let pin = board.buttons.button_a.into_pullup_input().degrade();
             let mut btn = Button::new(pin);
@@ -60,7 +57,7 @@ mod app {
             btn
         };
 
-        // Button B
+        // Button B (working rtc0)
         let btn2 = {
             let pin = board.buttons.button_b.into_pullup_input().degrade();
             let mut btn = Button::new(pin);
@@ -70,14 +67,7 @@ mod app {
             btn
         };
 
-        // Initialize the monotonic clock based on system time running at 64MHz
-        let mono = Systick::new(board.SYST, 64_000_000);
-
-        (
-            Shared { btn1, btn2 },
-            Local { rtc0 },
-            init::Monotonics(mono),
-        )
+        (Shared { btn1, btn2 }, Local { rtc0 }, init::Monotonics())
     }
 
     #[task(priority = 1, binds = RTC0, local = [rtc0], shared = [btn1, btn2])]

@@ -106,7 +106,7 @@ impl<const TIMER_HZ: u32> Button<TIMER_HZ> {
                 }
             }
             Up => {
-                if active && wait_time >= self.debounce_ms {
+                if !active && wait_time > self.debounce_ms {
                     self.cnt_click += 1;
                     self.update_state(Count);
                 }
@@ -130,17 +130,13 @@ impl<const TIMER_HZ: u32> Button<TIMER_HZ> {
                 if !active {
                     self.update_state(Pressend);
                     self.start_time = now;
-                } else if let Some(f) = self.attach_event_fn {
-                    f(Event::LongPressDuring)
+                } else {
+                    self.attach_event_fn.map(|f| f(Event::LongPressDuring));
                 }
             }
             Pressend => {
-                if active && (wait_time < self.debounce_ms) {
-                    self.update_state(self.last_state);
-                } else if wait_time > self.debounce_ms {
-                    if let Some(f) = self.attach_event_fn {
-                        f(Event::LongPressStop)
-                    }
+                if !active && wait_time > self.debounce_ms {
+                    self.attach_event_fn.map(|f| f(Event::LongPressStop));
                     self.reset();
                 }
             }

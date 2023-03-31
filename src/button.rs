@@ -1,8 +1,7 @@
-use bsp::hal::{
-    gpio::{Input, Pin, PullUp},
-    prelude::*,
-};
+use core::fmt::Debug;
+
 use defmt::Format;
+use embedded_hal::digital::v2::InputPin;
 use fugit::{ExtU64, TimerDurationU64, TimerInstantU64};
 
 #[derive(Debug, Format, Clone, Copy, PartialEq, Eq)]
@@ -15,18 +14,8 @@ pub enum Event {
     LongPressStop,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum State {
-    Pending = 0,
-    Down = 1,
-    Up = 2,
-    Count = 3,
-    Press = 6,
-    Pressend = 7,
-}
-
-pub struct Button<const TIMER_HZ: u32> {
-    pin: Pin<Input<PullUp>>,
+pub struct Button<PIN, const TIMER_HZ: u32> {
+    pin: PIN,
     state: State,
     last_state: State,
     cnt_click: u32,
@@ -38,8 +27,22 @@ pub struct Button<const TIMER_HZ: u32> {
     press_ms: TimerDurationU64<TIMER_HZ>,
 }
 
-impl<const TIMER_HZ: u32> Button<TIMER_HZ> {
-    pub fn new(pin: Pin<Input<PullUp>>) -> Self {
+#[derive(Debug, Format, Clone, Copy, PartialEq, Eq)]
+enum State {
+    Pending = 0,
+    Down = 1,
+    Up = 2,
+    Count = 3,
+    Press = 6,
+    Pressend = 7,
+}
+
+impl<PIN, E, const TIMER_HZ: u32> Button<PIN, TIMER_HZ>
+where
+    E: Debug,
+    PIN: InputPin<Error = E>,
+{
+    pub fn new(pin: PIN) -> Self {
         Self {
             pin,
             state: State::Pending,
@@ -70,16 +73,8 @@ impl<const TIMER_HZ: u32> Button<TIMER_HZ> {
         self.attach_event_fn = Some(f);
     }
 
-    pub fn free(self) -> Pin<Input<PullUp>> {
+    pub fn free(self) -> PIN {
         self.pin
-    }
-
-    pub fn reset(&mut self) {
-        self.state = State::Pending;
-        self.last_state = State::Pending;
-        self.cnt_click = 0;
-        self.time = TimerInstantU64::from_ticks(0);
-        self.start_time = TimerInstantU64::from_ticks(0);
     }
 
     pub fn tick(&mut self) {
@@ -141,6 +136,15 @@ impl<const TIMER_HZ: u32> Button<TIMER_HZ> {
                 }
             }
         }
+    }
+
+    #[inline]
+    fn reset(&mut self) {
+        self.state = State::Pending;
+        self.last_state = State::Pending;
+        self.cnt_click = 0;
+        self.time = TimerInstantU64::from_ticks(0);
+        self.start_time = TimerInstantU64::from_ticks(0);
     }
 
     #[inline]

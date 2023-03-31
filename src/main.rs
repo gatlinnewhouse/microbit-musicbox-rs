@@ -3,22 +3,28 @@
 
 extern crate microbit as bsp; // board support package
 
-mod button;
-mod note;
+use defmt_rtt as _; // global logger
+use panic_probe as _; // panic handler
 
-use defmt_rtt as _;
-use panic_probe as _;
+mod button;
+mod melody;
+mod mono;
+mod note;
 
 #[rtic::app(device = bsp::pac, peripherals = true, dispatchers = [SWI0_EGU0])]
 mod app {
+    use super::*;
+
     use bsp::hal::clocks::Clocks;
+    use bsp::hal::gpio::{Input, Pin, PullUp};
     use bsp::hal::rtc::{Rtc, RtcInterrupt};
     use bsp::pac::RTC0;
     use bsp::Board;
 
-    use crate::button;
+    type Button = button::Button<Pin<Input<PullUp>>, 100>;
 
-    type Button = button::Button<100>; // working frequency 100Hz (rtc0)
+    #[monotonic(binds = TIMER0, default = true)]
+    type Mono = mono::MonoTimer<bsp::pac::TIMER0>;
 
     #[shared]
     struct Shared {
@@ -36,6 +42,7 @@ mod app {
         defmt::info!("init musicbox");
 
         let board = Board::new(ctx.device, ctx.core);
+        let mono = mono::MonoTimer::new(board.TIMER0);
 
         // Starting the low-frequency clock (needed for RTC to work)
         Clocks::new(board.CLOCK).start_lfclk();
@@ -47,7 +54,7 @@ mod app {
         rtc0.enable_interrupt(RtcInterrupt::Tick, None);
         rtc0.enable_counter();
 
-        // Button A (working rtc0)
+        // Button A
         let btn1 = {
             let pin = board.buttons.button_a.into_pullup_input().degrade();
             let mut btn = Button::new(pin);
@@ -57,7 +64,7 @@ mod app {
             btn
         };
 
-        // Button B (working rtc0)
+        // Button B
         let btn2 = {
             let pin = board.buttons.button_b.into_pullup_input().degrade();
             let mut btn = Button::new(pin);
@@ -67,7 +74,11 @@ mod app {
             btn
         };
 
-        (Shared { btn1, btn2 }, Local { rtc0 }, init::Monotonics())
+        (
+            Shared { btn1, btn2 },
+            Local { rtc0 },
+            init::Monotonics(mono),
+        )
     }
 
     #[task(priority = 1, binds = RTC0, local = [rtc0], shared = [btn1, btn2])]

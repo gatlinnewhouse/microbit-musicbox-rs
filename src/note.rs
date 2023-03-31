@@ -1,214 +1,145 @@
-use core::{fmt::Display, str::FromStr};
+use defmt::Format;
 
-use self::error::Error;
-
-#[derive(Debug)]
-pub enum Key {
-    C,
-    Cs,
-    Df,
-    D,
-    Ds,
-    Ef,
-    E,
-    F,
-    Fs,
-    Gf,
-    G,
-    Gs,
-    Af,
-    A,
-    Bf,
-    B,
-}
-
-impl Display for Key {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        use Key::*;
-        let symbol = match *self {
-            C => "C",
-            Cs => "C♯",
-            Df => "D♭",
-            D => "D",
-            Ds => "D♯",
-            E => "E",
-            Ef => "E♭",
-            F => "F",
-            Fs => "F♯",
-            Gf => "G♭",
-            G => "G",
-            Gs => "G♯",
-            Af => "A♭",
-            A => "A",
-            Bf => "B♭",
-            B => "B",
-        };
-
-        write!(f, "{}", symbol)
-    }
-}
-
-impl FromStr for Key {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        use Key::*;
-
-        if s.is_empty() {
-            return Err(Error::EmptyKey);
+macro_rules! notes {
+    (
+        $($key:ident: $freq:expr),+
+    ) => {
+        #[derive(Format, Debug, Clone, Copy, PartialEq, Eq)]
+        pub enum Note {
+            $(
+                $key,
+            )*
         }
 
-        let key = match s {
-            "C" => C,
-            "C♯" => Cs,
-            "D♭" => Df,
-            "D" => D,
-            "D♯" => Ds,
-            "E" => E,
-            "E♭" => Ef,
-            "F" => F,
-            "F♯" => Fs,
-            "G♭" => Gf,
-            "G" => G,
-            "G♯" => Gs,
-            "A♭" => Af,
-            "A" => A,
-            "B♭" => Bf,
-            "B" => B,
-            ks => return Err(Error::InvalidKey),
-        };
-        Ok(key)
-    }
-}
-
-#[derive(Debug)]
-pub enum Duration {
-    /// 四分音符
-    Quarter,
-    /// 八分音符
-    Eighth,
-    /// 十六分音符
-    Sixteenth,
-}
-
-impl Display for Duration {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let s = match self {
-            Duration::Quarter => "4",
-            Duration::Eighth => "8",
-            Duration::Sixteenth => "16",
-        };
-        write!(f, "{}", s)
-    }
-}
-
-impl FromStr for Duration {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        use Duration::*;
-
-        if s.is_empty() {
-            return Err(Error::EmptyDuration);
-        }
-
-        let duration = match s {
-            "4" => Quarter,
-            "8" => Eighth,
-            "16" => Sixteenth,
-            s => return Err(Error::InvalidDuration),
-        };
-        Ok(duration)
-    }
-}
-
-#[derive(Debug)]
-pub struct Note {
-    /// 音名
-    key: Key,
-    /// 八度, 取值 0-9, 如: C4 = C major
-    octave: u8,
-    /// 附点音符
-    dotted: bool,
-    /// 音符持续时间
-    duration: Duration,
-}
-
-impl Display for Note {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let dotted = if self.dotted { "-" } else { "" };
-        write!(f, "{}{}:{}{}", self.key, self.octave, dotted, self.duration)
-    }
-}
-
-impl FromStr for Note {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.is_empty() {
-            return Err(Error::EmptyNote);
-        }
-
-        if let Some(colon) = s.find(':') {
-            let prefix = &s[0..colon];
-            let prefix_len = prefix.len();
-            let suffix = &s[colon + 1..];
-
-            let key = prefix[..prefix_len].parse()?;
-            let octave = prefix[prefix_len - 1..]
-                .parse()
-                .map_err(|_| Error::InvalidOctave)?;
-            let dotted = &suffix[0..1] == "-";
-            let duration = if dotted {
-                suffix[1..].parse()?
-            } else {
-                suffix[..].parse()?
-            };
-
-            Ok(Note {
-                key,
-                octave,
-                dotted,
-                duration,
-            })
-        } else {
-            Err(Error::MissingColon)
-        }
-    }
-}
-
-pub mod error {
-    use core::fmt;
-    use core::fmt::Display;
-
-    pub enum Error {
-        EmptyKey,
-        InvalidKey,
-        EmptyDuration,
-        InvalidDuration,
-        InvalidOctave,
-        EmptyNote,
-        MissingColon,
-    }
-
-    impl Error {
-        #[doc(hidden)]
-        pub fn __description(&self) -> &str {
-            match &self {
-                Error::EmptyKey => "cannot parse key from empty string",
-                Error::InvalidKey => "invalid key found in string",
-                Error::EmptyDuration => "cannot parse duration from empty string",
-                Error::InvalidDuration => "invalid duration found in string",
-                Error::InvalidOctave => "invalid octave found in string",
-                Error::EmptyNote => "cannot parse note from empty string",
-                Error::MissingColon => "missing ':' symbol found in string",
+        impl Note {
+            pub fn freq(&self) -> f32 {
+                match *self {
+                    $(Note::$key => $freq,)*
+                }
             }
         }
-    }
-
-    impl Display for Error {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            self.__description().fmt(f)
-        }
-    }
+    };
 }
+
+notes!(
+    // C
+    C1: 32.703,
+    C2: 65.406,
+    C3: 130.81,
+    C4: 261.63,
+    C5: 523.25,
+    C6: 1046.5,
+    C7: 2093.0,
+    C8: 4186.0,
+    C9: 8372.0,
+    // C♯/D♭
+    CS1: 34.648,
+    CS2: 69.296,
+    CS3: 138.59,
+    CS4: 277.18,
+    CS5: 554.37,
+    CS6: 1108.7,
+    CS7: 2217.5,
+    CS8: 4434.9,
+    CS9: 8869.8,
+    // D
+    D1: 36.708,
+    D2: 73.416,
+    D3: 146.83,
+    D4: 293.66,
+    D5: 587.33,
+    D6: 1174.7,
+    D7: 2349.3,
+    D8: 4698.6,
+    D9: 9397.3,
+    // D♯/E♭
+    DS1: 38.891,
+    DS2: 77.782,
+    DS3: 155.56,
+    DS4: 311.13,
+    DS5: 622.25,
+    DS6: 1244.5,
+    DS7: 2489.0,
+    DS8: 4978.0,
+    DS9: 9956.1,
+    // E
+    E1: 41.203,
+    E2: 82.407,
+    E3: 164.81,
+    E4: 329.63,
+    E5: 659.26,
+    E6: 1318.5,
+    E7: 2637.0,
+    E8: 5274.0,
+    E9: 10548.0,
+    // F
+    F1: 43.654,
+    F2: 87.307,
+    F3: 174.61,
+    F4: 349.23,
+    F5: 698.46,
+    F6: 1396.9,
+    F7: 2793.8,
+    F8: 5587.7,
+    F9: 11175.0,
+    // F♯/G♭
+    FS1: 46.249,
+    FS2: 92.499,
+    FS3: 185.00,
+    FS4: 369.99,
+    FS5: 739.99,
+    FS6: 1480.0,
+    FS7: 2960.0,
+    FS8: 5919.9,
+    FS9: 11840.0,
+    // G
+    G1: 48.999,
+    G2: 97.999,
+    G3: 196.00,
+    G4: 392.00,
+    G5: 783.99,
+    G6: 1568.0,
+    G7: 3136.0,
+    G8: 6271.9,
+    G9: 12544.0,
+    // G♯/A♭
+    GS1: 51.913,
+    GS2: 103.83,
+    GS3: 207.65,
+    GS4: 415.30,
+    GS5: 830.61,
+    GS6: 1661.2,
+    GS7: 3322.4,
+    GS8: 6644.9,
+    GS9: 13290.0,
+    // A
+    A1: 55.000,
+    A2: 110.00,
+    A3: 220.00,
+    A4: 440.00,
+    A5: 880.00,
+    A6: 1760.0,
+    A7: 3520.0,
+    A8: 7040.0,
+    A9: 14080.0,
+    // A♯/B♭
+    AS1: 58.270,
+    AS2: 116.54,
+    AS3: 233.08,
+    AS4: 466.16,
+    AS5: 932.33,
+    AS6: 1864.7,
+    AS7: 3729.3,
+    AS8: 7458.6,
+    AS9: 14917.0,
+    // B
+    B1: 61.735,
+    B2: 123.47,
+    B3: 246.94,
+    B4: 493.88,
+    B5: 987.77,
+    B6: 1975.5,
+    B7: 3951.1,
+    B8: 7902.1,
+    B9: 15804.0
+);

@@ -10,6 +10,7 @@ mod button;
 mod melody;
 mod mono;
 mod note;
+mod player;
 
 #[rtic::app(device = bsp::pac, peripherals = true, dispatchers = [SWI0_EGU0])]
 mod app {
@@ -18,10 +19,11 @@ mod app {
     use bsp::hal::clocks::Clocks;
     use bsp::hal::gpio::{Input, Pin, PullUp};
     use bsp::hal::rtc::{Rtc, RtcInterrupt};
-    use bsp::pac::RTC0;
+    use bsp::pac::{PWM1, RTC0, TIMER1};
     use bsp::Board;
 
     type Button = button::Button<Pin<Input<PullUp>>, 100>;
+    type Player = player::Player<'static, TIMER1, PWM1>;
 
     #[monotonic(binds = TIMER0, default = true)]
     type Mono = mono::MonoTimer<bsp::pac::TIMER0>;
@@ -30,6 +32,7 @@ mod app {
     struct Shared {
         btn1: Button,
         btn2: Button,
+        player: Player,
     }
 
     #[local]
@@ -74,8 +77,18 @@ mod app {
             btn
         };
 
+        let mut player = {
+            let pin = board
+                .speaker_pin
+                .into_push_pull_output(bsp::hal::gpio::Level::High)
+                .degrade();
+            Player::new(board.TIMER1, board.PWM1, pin)
+        };
+
+        player.play(melody::HAPPY_BIRTHDAY);
+
         (
-            Shared { btn1, btn2 },
+            Shared { btn1, btn2, player },
             Local { rtc0 },
             init::Monotonics(mono),
         )
@@ -86,6 +99,11 @@ mod app {
         ctx.local.rtc0.reset_event(RtcInterrupt::Tick);
         ctx.shared.btn1.lock(|btn| btn.tick());
         ctx.shared.btn2.lock(|btn| btn.tick());
+    }
+
+    #[task(priority = 2, binds = TIMER1, shared = [player])]
+    fn timer1(mut ctx: timer1::Context) {
+        ctx.shared.player.lock(|ply| ply.tick());
     }
 
     #[task]

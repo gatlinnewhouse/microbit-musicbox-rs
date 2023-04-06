@@ -1,20 +1,20 @@
 use defmt::Format;
 
-use crate::note::Note;
+use crate::tone::Tone;
 
 #[derive(Format, Debug)]
-pub struct Melody<'a> {
-    whole_note_duration: u32,
-    notes: &'a [(Note, i8)],
+pub struct Melody {
+    whole_note_delay_ms: u32,
+    notes: &'static [(Tone, i8)],
 }
 
-impl<'a> Melody<'a> {
-    pub fn get_note(&self, pos: usize) -> Option<(Note, f32)> {
+impl Melody {
+    pub fn get(&self, pos: usize) -> Option<(Tone, u32)> {
         self.notes.get(pos).cloned().map(|(note, div)| {
             let dotted = if div > 0 { false } else { true };
             let div = div.abs() as f32;
-            let duration = self.whole_note_duration as f32 / div;
-            (note, if dotted { duration * 1.5 } else { duration })
+            let delay_ms = self.whole_note_delay_ms as f32 / div;
+            (note, if dotted { delay_ms * 1.5 } else { delay_ms } as u32)
         })
     }
 }
@@ -26,11 +26,11 @@ macro_rules! melody {
         beat = $beat:expr,
         $([$($note:ident: $duration:expr),*]),*
     ) => {
-        pub const $name: Melody<'static> = Melody {
-            whole_note_duration: (60000 * $beat) / $tempo,
+        pub const $name: Melody = Melody {
+            whole_note_delay_ms: (60000 * $beat) / $tempo,
             notes: &[
                 $(
-                    $((Note::$note, $duration),)*
+                    $((Tone::$note, $duration),)*
                 )*
             ]
         };

@@ -1,27 +1,27 @@
 use defmt::Format;
 
-macro_rules! notes {
+macro_rules! tones {
     (
         $($key:ident: $freq:expr),+
     ) => {
         #[derive(Format, Debug, Clone, Copy, PartialEq, Eq)]
-        pub enum Note {
+        pub enum Tone {
             $(
                 $key,
             )*
         }
 
-        impl Note {
+        impl Tone {
             pub fn freq(&self) -> f32 {
                 match *self {
-                    $(Note::$key => $freq,)*
+                    $(Tone::$key => $freq,)*
                 }
             }
         }
     };
 }
 
-notes!(
+tones!(
     // C
     C1: 32.703,
     C2: 65.406,

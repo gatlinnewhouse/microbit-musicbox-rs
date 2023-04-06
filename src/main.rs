@@ -9,7 +9,7 @@ use panic_probe as _; // panic handler
 mod button;
 mod melody;
 mod mono;
-mod note;
+mod tone;
 mod player;
 
 #[rtic::app(device = bsp::pac, peripherals = true, dispatchers = [SWI0_EGU0])]
@@ -85,7 +85,7 @@ mod app {
             Player::new(board.TIMER1, board.PWM1, pin)
         };
 
-        player.play(melody::HAPPY_BIRTHDAY);
+        player.play(&melody::HAPPY_BIRTHDAY);
 
         (
             Shared { btn1, btn2, player },
@@ -94,9 +94,10 @@ mod app {
         )
     }
 
-    #[task(priority = 1, binds = RTC0, local = [rtc0], shared = [btn1, btn2])]
+    #[task(priority = 1, binds = RTC0, local = [rtc0], shared = [player, btn1, btn2])]
     fn rtc0(mut ctx: rtc0::Context) {
         ctx.local.rtc0.reset_event(RtcInterrupt::Tick);
+        ctx.shared.player.lock(|ply| ply.tick());
         ctx.shared.btn1.lock(|btn| btn.tick());
         ctx.shared.btn2.lock(|btn| btn.tick());
     }

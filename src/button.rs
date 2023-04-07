@@ -52,8 +52,8 @@ where
             time: TimerInstantU64::from_ticks(0),
             start_time: TimerInstantU64::from_ticks(0),
             debounce_ms: 50.millis(),
-            click_ms: 400.millis(),
-            press_ms: 800.millis(),
+            click_ms: 200.millis(),
+            press_ms: 500.millis(),
         }
     }
 

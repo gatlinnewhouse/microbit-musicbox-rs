@@ -82,16 +82,15 @@ impl<'a, T: timer::Instance, P: pwm::Instance> Player<'a, T, P> {
             } else if next_fired {
                 self.pos += 1;
                 self.buzzer.stop();
-            } else if volume_fired {
-                self.buzzer.update_volume(self.volume);
             }
+        }
+        if volume_fired {
+            self.buzzer.update_volume(self.volume);
         }
     }
 }
 
 mod inner {
-    use bsp::hal::time::Hertz;
-
     use super::*;
 
     pub(super) struct PlayerBuzzer<T: pwm::Instance>(pwm::Pwm<T>);
@@ -107,16 +106,11 @@ mod inner {
         }
 
         pub fn tone(&self, tone: Tone, volume: u32) {
-            self.update_period(tone.hz());
-            self.update_volume(volume);
-        }
-
-        pub fn update_period(&self, freq: Hertz) {
-            if freq.0 != 0 {
-                self.0.set_period(freq);
+            self.0.disable();
+            if tone != Tone::REST {
+                self.0.set_period(tone.hz());
+                self.update_volume(volume);
                 self.0.enable();
-            } else {
-                self.0.disable();
             }
         }
 

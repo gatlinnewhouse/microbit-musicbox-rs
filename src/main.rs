@@ -30,9 +30,10 @@ mod app {
     type Mono = mono::MonoTimer<bsp::pac::TIMER0>;
 
     const MELODY_LIST: &[melody::Melody] = &[
+        melody::GAME_OF_THRONES,
+        melody::SUPER_MARIOBROS,
         melody::HAPPY_BIRTHDAY,
         melody::MERRY_CHRISTMAS,
-        melody::SUPER_MARIOBROS,
     ];
 
     #[shared]

@@ -86,15 +86,15 @@ mod app {
         };
 
         let player_pos = 0;
-        let mut player = {
+        let player = {
             let pin = board
                 .speaker_pin
                 .into_push_pull_output(bsp::hal::gpio::Level::High)
                 .degrade();
-            Player::new(board.TIMER1, board.PWM1, pin)
+            let mut player = Player::new(board.TIMER1, board.PWM1, pin);
+            player.play(&MELODY_LIST[player_pos]);
+            player
         };
-
-        player.play(&MELODY_LIST[player_pos]);
 
         (
             Shared {
@@ -128,11 +128,14 @@ mod app {
         defmt::debug!("btn1 event: {:?}", &event);
         (ctx.shared.player, ctx.shared.player_pos).lock(|ply, pos| match event {
             Click => {
-                *pos = cmp::max((*pos).saturating_sub(1), 0);
-                ply.play(&MELODY_LIST[*pos]);
+                ply.set_volmue(ply.volume().saturating_sub(10));
             }
             LongPressStart | LongPressDuring | LongPressStop => {
                 ply.set_volmue(ply.volume().saturating_sub(1));
+            }
+            DoubleClick => {
+                *pos = cmp::max((*pos).saturating_sub(1), 0);
+                ply.play(&MELODY_LIST[*pos]);
             }
             _ => {}
         })
@@ -145,11 +148,14 @@ mod app {
         defmt::debug!("btn2 event: {:?}", &event);
         (ctx.shared.player, ctx.shared.player_pos).lock(|ply, pos| match event {
             Click => {
-                *pos = cmp::min((*pos).saturating_add(1), MELODY_LIST.len() - 1);
-                ply.play(&MELODY_LIST[*pos]);
+                ply.set_volmue(ply.volume().saturating_add(10));
             }
             LongPressStart | LongPressDuring | LongPressStop => {
                 ply.set_volmue(ply.volume().saturating_add(1));
+            }
+            DoubleClick => {
+                *pos = cmp::min((*pos).saturating_add(1), MELODY_LIST.len() - 1);
+                ply.play(&MELODY_LIST[*pos]);
             }
             _ => {}
         })

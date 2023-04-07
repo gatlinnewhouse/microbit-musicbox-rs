@@ -121,7 +121,7 @@ melody!(
 );
 
 melody!(
-    name = SUPER_MARIOBROS, tempo = 140, beat = 4,
+    name = SUPER_MARIOBROS, tempo = 200, beat = 4,
     [E5:8, E5:8, REST:8, E5:8, REST:8, C5:8, E5:8, //1
     G5:4, REST:4, G4:8, REST:4],
 

@@ -1,4 +1,4 @@
-use core::cmp::{max, min};
+use core::cmp;
 
 use bsp::hal::{
     gpio::{Output, Pin, PushPull},
@@ -35,8 +35,7 @@ impl<'a, T: timer::Instance, P: pwm::Instance> Player<'a, T, P> {
     }
 
     pub fn set_volmue(&mut self, volume: u32) {
-        self.volume = max(0, min(volume, 100));
-        defmt::info!("player::volume {}", self.volume);
+        self.volume = cmp::min(100, volume);
     }
 
     pub fn volume(&self) -> u32 {
@@ -44,6 +43,7 @@ impl<'a, T: timer::Instance, P: pwm::Instance> Player<'a, T, P> {
     }
 
     pub fn play(&mut self, melody: &'a Melody) {
+        self.stop();
         self.melody = Some(melody);
         self.timer.start();
         self.timer.set_play_duration(1.secs()); // play notes after 1 seconds
@@ -64,30 +64,20 @@ impl<'a, T: timer::Instance, P: pwm::Instance> Player<'a, T, P> {
     }
 
     pub fn tick(&mut self) {
-        defmt::debug!("player::tick {}", self.timer.now());
         let play_fired = self.timer.check_play();
         let next_fired = self.timer.check_next();
         if let Some(melody) = self.melody {
             if play_fired {
                 let buzzer = &self.buzzer;
                 let timer = &self.timer;
-                let volume = &self.volume;
                 if let Some((tone, delay_ms)) = melody.get(self.pos) {
-                    defmt::info!(
-                        "player::tone: {}, volume: {}%, delay: {}ms",
-                        tone,
-                        volume,
-                        delay_ms
-                    );
-                    buzzer.tone(tone, volume);
+                    buzzer.tone(tone, self.volume);
                     timer.set_play_duration((delay_ms * 1_000).micros());
                     timer.set_next_duration((delay_ms * 900).micros());
                 } else {
-                    defmt::info!("player::replay");
                     self.replay();
                 }
             } else if next_fired {
-                defmt::info!("player::next_note");
                 self.pos += 1;
                 self.buzzer.stop();
             }
@@ -110,14 +100,17 @@ mod inner {
             Self(buzzer)
         }
 
-        pub fn tone(&self, tone: Tone, _volume: &u32) {
-            let max_duty = self.0.set_period(tone.freq()).max_duty();
-            // let half_max_duty = max_duty as f32;
-            // let percent_volmue = *volume as f32 / 100_f32;
-            // let duty = half_max_duty * percent_volmue;
-            // TODO: use volume change the buzzer duty
-            self.0.set_duty_on(pwm::Channel::C0, max_duty / 2);
-            self.0.enable();
+        pub fn tone(&self, tone: Tone, volume: u32) {
+            if tone != Tone::REST {
+                let max_duty = self.0.set_period(tone.hz()).max_duty() as f32;
+                let min_vol = max_duty * 0.2;
+                let max_vol = max_duty * 0.5;
+                let vol = (max_vol - min_vol) * (volume as f32 / 100_f32);
+                self.0.set_duty_on(pwm::Channel::C0, (min_vol + vol) as u16);
+                self.0.enable();
+            } else {
+                self.0.disable();
+            }
         }
 
         pub fn stop(&self) {

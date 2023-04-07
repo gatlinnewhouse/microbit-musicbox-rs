@@ -13,9 +13,15 @@ macro_rules! tones {
         }
 
         impl Tone {
-            pub fn freq(&self) -> Hertz {
+            pub fn hz(&self) -> Hertz {
                 match *self {
                     $(Tone::$key => Hertz($freq),)*
+                }
+            }
+
+            pub fn freq(&self) -> u32 {
+                match *self {
+                    $(Tone::$key => $freq,)*
                 }
             }
         }

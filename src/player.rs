@@ -20,21 +20,23 @@ pub enum Event {
 }
 
 pub struct Player<'a, T: timer::Instance, P: pwm::Instance> {
-    melody: Option<&'a Melody>,
-    pos: usize,
+    list: &'a [Melody],
+    play_pos: usize,
+    note_pos: usize,
     volume: u32,
     timer: PlayerTimer<T>,
     buzzer: PlayerBuzzer<P>,
 }
 
 impl<'a, T: timer::Instance, P: pwm::Instance> Player<'a, T, P> {
-    pub fn new(timer: T, pwm: P, pin: Pin<Output<PushPull>>) -> Self {
+    pub fn new(timer: T, pwm: P, pin: Pin<Output<PushPull>>, list: &'a [Melody]) -> Self {
         let timer = PlayerTimer::new(timer);
         let buzzer = PlayerBuzzer::new(pwm, pin);
 
-        Player {
-            melody: None,
-            pos: 0,
+        Self {
+            list,
+            play_pos: 0,
+            note_pos: 0,
             volume: 100,
             timer,
             buzzer,
@@ -49,17 +51,48 @@ impl<'a, T: timer::Instance, P: pwm::Instance> Player<'a, T, P> {
         self.volume
     }
 
-    pub fn play(&mut self, melody: &'a Melody) {
-        self.stop();
-        self.melody = Some(melody);
-        self.timer.start();
-        self.timer.set_play_duration(1.secs()); // play notes after 1 seconds
-    }
-
-    pub fn stop(&mut self) {
+    pub fn set_list(&mut self, list: &'a [Melody]) {
         self.timer.stop();
         self.buzzer.stop();
-        self.melody = None;
+        self.list = list;
+    }
+
+    pub fn play(&mut self) {
+        if self.list.get(self.play_pos).is_some() {
+            self.timer.start();
+            self.timer.set_play_duration(1.secs()); // play notes after 1 seconds
+        }
+    }
+
+    pub fn pause(&mut self) {
+        self.timer.stop();
+        self.buzzer.stop();
+    }
+
+    pub fn next(&mut self) {
+        self.timer.stop();
+        self.buzzer.stop();
+        self.note_pos = 0;
+        match self.play_pos.checked_add(1) {
+            Some(v) if v < self.list.len() - 1 => {
+                self.play_pos = v;
+            }
+            _ => self.play_pos = 0,
+        }
+        self.timer.start();
+        self.timer.set_play_duration(1.secs());
+    }
+
+    pub fn prev(&mut self) {
+        self.timer.stop();
+        self.buzzer.stop();
+        self.note_pos = 0;
+        match self.play_pos.checked_sub(1) {
+            Some(v) => self.play_pos = v,
+            _ => self.play_pos = self.list.len() - 1,
+        }
+        self.timer.start();
+        self.timer.set_play_duration(1.secs());
     }
 
     pub fn handle_play_event(&mut self) -> Event {
@@ -67,35 +100,30 @@ impl<'a, T: timer::Instance, P: pwm::Instance> Player<'a, T, P> {
         let mut event = Event::Unknow;
         let play_fired = self.timer.check_play();
         let next_fired = self.timer.check_next();
-        if let Some(melody) = self.melody {
+        if let Some(melody) = self.list.get(self.play_pos) {
             if play_fired {
                 let buzzer = &self.buzzer;
                 let timer = &self.timer;
-                if let Some((tone, delay_ms)) = melody.get(self.pos) {
+                if let Some((tone, delay_ms)) = melody.get(self.note_pos) {
                     buzzer.tone(tone, self.volume);
                     timer.set_play_duration((delay_ms * 1_000).micros());
                     timer.set_next_duration((delay_ms * 900).micros());
                     event = Event::PlayNote;
                 } else {
-                    self.replay();
+                    self.note_pos = 0;
+                    self.timer.stop();
+                    self.buzzer.stop();
+                    self.timer.start();
+                    self.timer.set_play_duration(1.secs());
                     event = Event::Replay;
                 }
             } else if next_fired {
-                self.pos += 1;
+                self.note_pos += 1;
                 self.buzzer.stop();
                 event = Event::NextNote;
             }
         }
-
         event
-    }
-
-    fn replay(&mut self) {
-        self.timer.stop();
-        self.buzzer.stop();
-        self.pos = 0;
-        self.timer.start();
-        self.timer.set_play_duration(1.secs());
     }
 }
 
@@ -170,12 +198,10 @@ mod inner {
             self.set_duration_for_cc(2, duration)
         }
 
-        #[inline(always)]
         pub fn check_play(&self) -> bool {
             self.check_fired_for_cc(1)
         }
 
-        #[inline(always)]
         pub fn check_next(&self) -> bool {
             self.check_fired_for_cc(2)
         }

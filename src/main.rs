@@ -15,7 +15,6 @@ mod tone;
 #[rtic::app(device = bsp::pac, peripherals = true, dispatchers = [SWI0_EGU0])]
 mod app {
     use super::*;
-    use core::cmp;
 
     use bsp::hal::clocks::Clocks;
     use bsp::hal::gpio::{Input, Pin, PullUp};
@@ -39,7 +38,6 @@ mod app {
 
     #[shared]
     struct Shared {
-        player_pos: usize,
         display: Display,
         player: Player,
         btn1: Button,
@@ -75,15 +73,14 @@ mod app {
         };
 
         // Player
-        let player_pos = 0;
         let player = {
             let pin = board
                 .speaker_pin
                 .into_push_pull_output(bsp::hal::gpio::Level::High)
                 .degrade();
-            let mut player = Player::new(board.TIMER1, board.PWM1, pin);
-            player.play(&MELODY_LIST[player_pos]);
-            player
+            let mut ply = Player::new(board.TIMER1, board.PWM1, pin, MELODY_LIST);
+            ply.play();
+            ply
         };
 
         // Button A
@@ -111,7 +108,6 @@ mod app {
                 btn1,
                 btn2,
                 player,
-                player_pos,
                 display,
             },
             Local { rtc0 },
@@ -138,12 +134,12 @@ mod app {
             .lock(|display| display.handle_display_event());
     }
 
-    #[task(shared = [player, player_pos, display])]
-    fn handle_btn1_event(ctx: handle_btn1_event::Context, event: button::Event) {
+    #[task(shared = [player, display])]
+    fn handle_btn1_event(mut ctx: handle_btn1_event::Context, event: button::Event) {
         use button::Event::*;
 
         defmt::debug!("btn1 event: {:?}", &event);
-        (ctx.shared.player, ctx.shared.player_pos).lock(|ply, pos| match event {
+        ctx.shared.player.lock(|ply| match event {
             Click => {
                 ply.set_volmue(ply.volume().saturating_sub(10));
             }
@@ -151,19 +147,18 @@ mod app {
                 ply.set_volmue(ply.volume().saturating_sub(1));
             }
             DoubleClick => {
-                *pos = cmp::max((*pos).saturating_sub(1), 0);
-                ply.play(&MELODY_LIST[*pos]);
+                ply.prev();
             }
             _ => {}
         })
     }
 
-    #[task(shared = [player, player_pos])]
-    fn handle_btn2_event(ctx: handle_btn2_event::Context, event: button::Event) {
+    #[task(shared = [player])]
+    fn handle_btn2_event(mut ctx: handle_btn2_event::Context, event: button::Event) {
         use button::Event::*;
 
         defmt::debug!("btn2 event: {:?}", &event);
-        (ctx.shared.player, ctx.shared.player_pos).lock(|ply, pos| match event {
+        ctx.shared.player.lock(|ply| match event {
             Click => {
                 ply.set_volmue(ply.volume().saturating_add(10));
             }
@@ -171,8 +166,7 @@ mod app {
                 ply.set_volmue(ply.volume().saturating_add(1));
             }
             DoubleClick => {
-                *pos = cmp::min((*pos).saturating_add(1), MELODY_LIST.len() - 1);
-                ply.play(&MELODY_LIST[*pos]);
+                ply.next();
             }
             _ => {}
         })

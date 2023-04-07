@@ -17,6 +17,10 @@ impl Melody {
             (note, if dotted { delay_ms * 1.5 } else { delay_ms } as u32)
         })
     }
+
+    pub fn len(&self) -> usize {
+        self.notes.len()
+    }
 }
 
 macro_rules! melody {

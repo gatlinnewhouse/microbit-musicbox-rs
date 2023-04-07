@@ -9,12 +9,13 @@ use panic_probe as _; // panic handler
 mod button;
 mod melody;
 mod mono;
-mod tone;
 mod player;
+mod tone;
 
 #[rtic::app(device = bsp::pac, peripherals = true, dispatchers = [SWI0_EGU0])]
 mod app {
     use super::*;
+    use core::cmp;
 
     use bsp::hal::clocks::Clocks;
     use bsp::hal::gpio::{Input, Pin, PullUp};
@@ -28,11 +29,14 @@ mod app {
     #[monotonic(binds = TIMER0, default = true)]
     type Mono = mono::MonoTimer<bsp::pac::TIMER0>;
 
+    const MELODY_LIST: &[melody::Melody] = &[melody::HAPPY_BIRTHDAY];
+
     #[shared]
     struct Shared {
         btn1: Button,
         btn2: Button,
         player: Player,
+        player_pos: usize,
     }
 
     #[local]
@@ -77,7 +81,7 @@ mod app {
             btn
         };
 
-        let mut player = {
+        let player = {
             let pin = board
                 .speaker_pin
                 .into_push_pull_output(bsp::hal::gpio::Level::High)
@@ -85,10 +89,13 @@ mod app {
             Player::new(board.TIMER1, board.PWM1, pin)
         };
 
-        player.play(&melody::HAPPY_BIRTHDAY);
-
         (
-            Shared { btn1, btn2, player },
+            Shared {
+                btn1,
+                btn2,
+                player,
+                player_pos: 0,
+            },
             Local { rtc0 },
             init::Monotonics(mono),
         )
@@ -107,14 +114,38 @@ mod app {
         ctx.shared.player.lock(|ply| ply.tick());
     }
 
-    #[task]
-    fn handle_btn1_event(_ctx: handle_btn1_event::Context, event: button::Event) {
-        defmt::info!("btn1 event: {:?}", &event);
+    #[task(shared = [player, player_pos])]
+    fn handle_btn1_event(ctx: handle_btn1_event::Context, event: button::Event) {
+        use button::Event::*;
+
+        defmt::debug!("btn1 event: {:?}", &event);
+        (ctx.shared.player, ctx.shared.player_pos).lock(|ply, pos| match event {
+            Click => {
+                *pos = cmp::max((*pos).saturating_sub(1), 0);
+                ply.play(&MELODY_LIST[*pos]);
+            }
+            LongPressStart | LongPressDuring | LongPressStop => {
+                ply.set_volmue(ply.volume().saturating_sub(1));
+            }
+            _ => {}
+        })
     }
 
-    #[task]
-    fn handle_btn2_event(_ctx: handle_btn2_event::Context, event: button::Event) {
-        defmt::info!("btn2 event: {:?}", &event);
+    #[task(shared = [player, player_pos])]
+    fn handle_btn2_event(ctx: handle_btn2_event::Context, event: button::Event) {
+        use button::Event::*;
+
+        defmt::debug!("btn2 event: {:?}", &event);
+        (ctx.shared.player, ctx.shared.player_pos).lock(|ply, pos| match event {
+            Click => {
+                *pos = cmp::min((*pos).saturating_add(1), MELODY_LIST.len() - 1);
+                ply.play(&MELODY_LIST[*pos]);
+            }
+            LongPressStart | LongPressDuring | LongPressStop => {
+                ply.set_volmue(ply.volume().saturating_add(1));
+            }
+            _ => {}
+        })
     }
 
     #[idle]

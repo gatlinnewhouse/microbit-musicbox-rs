@@ -110,12 +110,13 @@ mod inner {
             Self(buzzer)
         }
 
-        pub fn tone(&self, tone: Tone, volume: &u32) {
+        pub fn tone(&self, tone: Tone, _volume: &u32) {
             let max_duty = self.0.set_period(tone.freq()).max_duty();
-            let half_max_duty = max_duty as f32 / 2_f32;
-            let percent_volmue = *volume as f32 / 100_f32;
-            let duty = half_max_duty * percent_volmue;
-            self.0.set_duty_on(pwm::Channel::C0, duty as u16);
+            // let half_max_duty = max_duty as f32;
+            // let percent_volmue = *volume as f32 / 100_f32;
+            // let duty = half_max_duty * percent_volmue;
+            // TODO: use volume change the buzzer duty
+            self.0.set_duty_on(pwm::Channel::C0, max_duty / 2);
             self.0.enable();
         }
 

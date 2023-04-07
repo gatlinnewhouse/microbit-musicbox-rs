@@ -29,7 +29,11 @@ mod app {
     #[monotonic(binds = TIMER0, default = true)]
     type Mono = mono::MonoTimer<bsp::pac::TIMER0>;
 
-    const MELODY_LIST: &[melody::Melody] = &[melody::HAPPY_BIRTHDAY];
+    const MELODY_LIST: &[melody::Melody] = &[
+        melody::HAPPY_BIRTHDAY,
+        melody::MERRY_CHRISTMAS,
+        melody::SUPER_MARIOBROS,
+    ];
 
     #[shared]
     struct Shared {
@@ -81,7 +85,8 @@ mod app {
             btn
         };
 
-        let player = {
+        let player_pos = 0;
+        let mut player = {
             let pin = board
                 .speaker_pin
                 .into_push_pull_output(bsp::hal::gpio::Level::High)
@@ -89,12 +94,14 @@ mod app {
             Player::new(board.TIMER1, board.PWM1, pin)
         };
 
+        player.play(&MELODY_LIST[player_pos]);
+
         (
             Shared {
                 btn1,
                 btn2,
                 player,
-                player_pos: 0,
+                player_pos,
             },
             Local { rtc0 },
             init::Monotonics(mono),

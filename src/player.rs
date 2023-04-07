@@ -36,6 +36,7 @@ impl<'a, T: timer::Instance, P: pwm::Instance> Player<'a, T, P> {
 
     pub fn set_volmue(&mut self, volume: u32) {
         self.volume = cmp::min(100, volume);
+        self.timer.set_volume_change();
     }
 
     pub fn volume(&self) -> u32 {
@@ -66,6 +67,7 @@ impl<'a, T: timer::Instance, P: pwm::Instance> Player<'a, T, P> {
     pub fn tick(&mut self) {
         let play_fired = self.timer.check_play();
         let next_fired = self.timer.check_next();
+        let volume_fired = self.timer.volume_change();
         if let Some(melody) = self.melody {
             if play_fired {
                 let buzzer = &self.buzzer;
@@ -80,12 +82,16 @@ impl<'a, T: timer::Instance, P: pwm::Instance> Player<'a, T, P> {
             } else if next_fired {
                 self.pos += 1;
                 self.buzzer.stop();
+            } else if volume_fired {
+                self.buzzer.update_volume(self.volume);
             }
         }
     }
 }
 
 mod inner {
+    use bsp::hal::time::Hertz;
+
     use super::*;
 
     pub(super) struct PlayerBuzzer<T: pwm::Instance>(pwm::Pwm<T>);
@@ -101,16 +107,25 @@ mod inner {
         }
 
         pub fn tone(&self, tone: Tone, volume: u32) {
-            if tone != Tone::REST {
-                let max_duty = self.0.set_period(tone.hz()).max_duty() as f32;
-                let min_vol = max_duty * 0.2;
-                let max_vol = max_duty * 0.5;
-                let vol = (max_vol - min_vol) * (volume as f32 / 100_f32);
-                self.0.set_duty_on(pwm::Channel::C0, (min_vol + vol) as u16);
+            self.update_period(tone.hz());
+            self.update_volume(volume);
+        }
+
+        pub fn update_period(&self, freq: Hertz) {
+            if freq.0 != 0 {
+                self.0.set_period(freq);
                 self.0.enable();
             } else {
                 self.0.disable();
             }
+        }
+
+        pub fn update_volume(&self, volume: u32) {
+            let max_duty = self.0.max_duty() as f32;
+            let min_vol = max_duty * 0.2;
+            let max_vol = max_duty * 0.5;
+            let vol = (max_vol - min_vol) * (volume as f32 / 100_f32);
+            self.0.set_duty_on(pwm::Channel::C0, (min_vol + vol) as u16);
         }
 
         pub fn stop(&self) {
@@ -149,6 +164,10 @@ mod inner {
             self.set_duration_for_cc(2, duration)
         }
 
+        pub fn set_volume_change(&self) {
+            self.set_duration_for_cc(3, 1.micros());
+        }
+
         #[inline(always)]
         pub fn check_play(&self) -> bool {
             self.check_fired_for_cc(1)
@@ -157,6 +176,11 @@ mod inner {
         #[inline(always)]
         pub fn check_next(&self) -> bool {
             self.check_fired_for_cc(2)
+        }
+
+        #[inline(always)]
+        pub fn volume_change(&self) -> bool {
+            self.check_fired_for_cc(3)
         }
 
         #[inline(always)]

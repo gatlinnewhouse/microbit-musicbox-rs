@@ -20,11 +20,12 @@ mod app {
     use bsp::hal::clocks::Clocks;
     use bsp::hal::gpio::{Input, Pin, PullUp};
     use bsp::hal::rtc::{Rtc, RtcInterrupt};
-    use bsp::pac::{PWM1, RTC0, TIMER1};
+    use bsp::pac::{PWM1, RTC0, TIMER1, TIMER2};
     use bsp::Board;
 
     type Button = button::Button<Pin<Input<PullUp>>, 100>;
     type Player = player::Player<'static, TIMER1, PWM1>;
+    type Display = bsp::display::nonblocking::Display<TIMER2>;
 
     #[monotonic(binds = TIMER0, default = true)]
     type Mono = mono::MonoTimer<bsp::pac::TIMER0>;
@@ -35,12 +36,14 @@ mod app {
         melody::MERRY_CHRISTMAS,
         melody::HAPPY_BIRTHDAY,
     ];
+
     #[shared]
     struct Shared {
+        player_pos: usize,
+        display: Display,
+        player: Player,
         btn1: Button,
         btn2: Button,
-        player: Player,
-        player_pos: usize,
     }
 
     #[local]
@@ -65,6 +68,24 @@ mod app {
         rtc0.enable_interrupt(RtcInterrupt::Tick, None);
         rtc0.enable_counter();
 
+        // Display
+        let display = {
+            let pins = board.display_pins;
+            Display::new(board.TIMER2, pins)
+        };
+
+        // Player
+        let player_pos = 0;
+        let player = {
+            let pin = board
+                .speaker_pin
+                .into_push_pull_output(bsp::hal::gpio::Level::High)
+                .degrade();
+            let mut player = Player::new(board.TIMER1, board.PWM1, pin);
+            player.play(&MELODY_LIST[player_pos]);
+            player
+        };
+
         // Button A
         let btn1 = {
             let pin = board.buttons.button_a.into_pullup_input().degrade();
@@ -85,23 +106,13 @@ mod app {
             btn
         };
 
-        let player_pos = 0;
-        let player = {
-            let pin = board
-                .speaker_pin
-                .into_push_pull_output(bsp::hal::gpio::Level::High)
-                .degrade();
-            let mut player = Player::new(board.TIMER1, board.PWM1, pin);
-            player.play(&MELODY_LIST[player_pos]);
-            player
-        };
-
         (
             Shared {
                 btn1,
                 btn2,
                 player,
                 player_pos,
+                display,
             },
             Local { rtc0 },
             init::Monotonics(mono),
@@ -111,17 +122,23 @@ mod app {
     #[task(priority = 1, binds = RTC0, local = [rtc0], shared = [player, btn1, btn2])]
     fn rtc0(mut ctx: rtc0::Context) {
         ctx.local.rtc0.reset_event(RtcInterrupt::Tick);
-        ctx.shared.player.lock(|ply| ply.tick());
         ctx.shared.btn1.lock(|btn| btn.tick());
         ctx.shared.btn2.lock(|btn| btn.tick());
     }
 
     #[task(priority = 2, binds = TIMER1, shared = [player])]
     fn timer1(mut ctx: timer1::Context) {
-        ctx.shared.player.lock(|ply| ply.tick());
+        ctx.shared.player.lock(|ply| ply.handle_play_event());
     }
 
-    #[task(shared = [player, player_pos])]
+    #[task(priority = 3, binds = TIMER2, shared = [display])]
+    fn timer2(mut ctx: timer2::Context) {
+        ctx.shared
+            .display
+            .lock(|display| display.handle_display_event());
+    }
+
+    #[task(shared = [player, player_pos, display])]
     fn handle_btn1_event(ctx: handle_btn1_event::Context, event: button::Event) {
         use button::Event::*;
 

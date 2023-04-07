@@ -12,6 +12,13 @@ use crate::{melody::Melody, tone::Tone};
 type Instant = fugit::Instant<u32, 1, 1_000_000>;
 type Duration = fugit::Duration<u32, 1, 1_000_000>;
 
+pub enum Event {
+    PlayNote,
+    NextNote,
+    Replay,
+    Unknow,
+}
+
 pub struct Player<'a, T: timer::Instance, P: pwm::Instance> {
     melody: Option<&'a Melody>,
     pos: usize,
@@ -36,7 +43,6 @@ impl<'a, T: timer::Instance, P: pwm::Instance> Player<'a, T, P> {
 
     pub fn set_volmue(&mut self, volume: u32) {
         self.volume = cmp::min(100, volume);
-        self.timer.set_volume_change();
     }
 
     pub fn volume(&self) -> u32 {
@@ -56,18 +62,11 @@ impl<'a, T: timer::Instance, P: pwm::Instance> Player<'a, T, P> {
         self.melody = None;
     }
 
-    pub fn replay(&mut self) {
-        self.timer.stop();
-        self.buzzer.stop();
-        self.pos = 0;
-        self.timer.start();
-        self.timer.set_play_duration(1.secs());
-    }
-
-    pub fn tick(&mut self) {
+    pub fn handle_play_event(&mut self) -> Event {
+        defmt::debug!("player::tick {}", self.timer.now());
+        let mut event = Event::Unknow;
         let play_fired = self.timer.check_play();
         let next_fired = self.timer.check_next();
-        let volume_fired = self.timer.volume_change();
         if let Some(melody) = self.melody {
             if play_fired {
                 let buzzer = &self.buzzer;
@@ -76,17 +75,27 @@ impl<'a, T: timer::Instance, P: pwm::Instance> Player<'a, T, P> {
                     buzzer.tone(tone, self.volume);
                     timer.set_play_duration((delay_ms * 1_000).micros());
                     timer.set_next_duration((delay_ms * 900).micros());
+                    event = Event::PlayNote;
                 } else {
                     self.replay();
+                    event = Event::Replay;
                 }
             } else if next_fired {
                 self.pos += 1;
                 self.buzzer.stop();
+                event = Event::NextNote;
             }
         }
-        if volume_fired {
-            self.buzzer.update_volume(self.volume);
-        }
+
+        event
+    }
+
+    fn replay(&mut self) {
+        self.timer.stop();
+        self.buzzer.stop();
+        self.pos = 0;
+        self.timer.start();
+        self.timer.set_play_duration(1.secs());
     }
 }
 
@@ -114,16 +123,17 @@ mod inner {
             }
         }
 
-        pub fn update_volume(&self, volume: u32) {
+        pub fn stop(&self) {
+            self.0.disable();
+        }
+
+        #[inline(always)]
+        fn update_volume(&self, volume: u32) {
             let max_duty = self.0.max_duty() as f32;
             let min_vol = max_duty * 0.2;
             let max_vol = max_duty * 0.5;
             let vol = (max_vol - min_vol) * (volume as f32 / 100_f32);
             self.0.set_duty_on(pwm::Channel::C0, (min_vol + vol) as u16);
-        }
-
-        pub fn stop(&self) {
-            self.0.disable();
         }
     }
 
@@ -136,6 +146,8 @@ mod inner {
             timer0.tasks_clear.write(|w| w.tasks_clear().set_bit());
             timer0.bitmode.write(|w| w.bitmode()._32bit());
             timer0.prescaler.write(|w| unsafe { w.prescaler().bits(4) }); // 1 Mhz
+            timer0.intenset.write(|w| w.compare1().set_bit());
+            timer0.intenset.write(|w| w.compare2().set_bit());
             Self(timer)
         }
 
@@ -158,10 +170,6 @@ mod inner {
             self.set_duration_for_cc(2, duration)
         }
 
-        pub fn set_volume_change(&self) {
-            self.set_duration_for_cc(3, 1.micros());
-        }
-
         #[inline(always)]
         pub fn check_play(&self) -> bool {
             self.check_fired_for_cc(1)
@@ -170,11 +178,6 @@ mod inner {
         #[inline(always)]
         pub fn check_next(&self) -> bool {
             self.check_fired_for_cc(2)
-        }
-
-        #[inline(always)]
-        pub fn volume_change(&self) -> bool {
-            self.check_fired_for_cc(3)
         }
 
         #[inline(always)]

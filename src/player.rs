@@ -12,17 +12,17 @@ use crate::{melody::Melody, tone::Tone};
 type Instant = fugit::Instant<u32, 1, 1_000_000>;
 type Duration = fugit::Duration<u32, 1, 1_000_000>;
 
-pub enum Event {
-    PlayNote,
-    NextNote,
-    Replay,
-    Unknow,
+const DEFAULT_PLAY_DURATION: Duration = Duration::from_ticks(1 * 1000 * 1000);
+
+enum State {
+    Play { pos: usize, progress: usize },
+    Pause { pos: usize, progress: usize },
+    Stop,
 }
 
 pub struct Player<'a, T: timer::Instance, P: pwm::Instance> {
     list: &'a [Melody],
-    play_pos: usize,
-    note_pos: usize,
+    state: State,
     volume: u32,
     timer: PlayerTimer<T>,
     buzzer: PlayerBuzzer<P>,
@@ -32,19 +32,21 @@ impl<'a, T: timer::Instance, P: pwm::Instance> Player<'a, T, P> {
     pub fn new(timer: T, pwm: P, pin: Pin<Output<PushPull>>, list: &'a [Melody]) -> Self {
         let timer = PlayerTimer::new(timer);
         let buzzer = PlayerBuzzer::new(pwm, pin);
-
         Self {
             list,
-            play_pos: 0,
-            note_pos: 0,
+            state: State::Stop,
             volume: 100,
             timer,
             buzzer,
         }
     }
 
-    pub fn set_volmue(&mut self, volume: u32) {
-        self.volume = cmp::min(100, volume);
+    pub fn volume_add(&mut self, volume: u32) {
+        self.volume = self.volume.saturating_add(volume).min(100);
+    }
+
+    pub fn volume_sub(&mut self, volume: u32) {
+        self.volume = self.volume.saturating_sub(volume);
     }
 
     pub fn volume(&self) -> u32 {
@@ -52,78 +54,119 @@ impl<'a, T: timer::Instance, P: pwm::Instance> Player<'a, T, P> {
     }
 
     pub fn set_list(&mut self, list: &'a [Melody]) {
-        self.timer.stop();
-        self.buzzer.stop();
+        self.stop();
         self.list = list;
     }
 
+    pub fn stop(&mut self) {
+        self.timer.stop();
+        self.buzzer.stop();
+        self.state = State::Stop;
+    }
+
     pub fn play(&mut self) {
-        if self.list.get(self.play_pos).is_some() {
+        if let Some(next_state) = match self.state {
+            State::Stop => Some(State::Play {
+                pos: 0,
+                progress: 0,
+            }),
+            State::Pause { pos, progress } => Some(State::Play { pos, progress }),
+            _ => None,
+        } {
+            self.state = next_state;
             self.timer.start();
-            self.timer.set_play_duration(1.secs()); // play notes after 1 seconds
+            self.timer.set_play_duration(DEFAULT_PLAY_DURATION);
         }
     }
 
     pub fn pause(&mut self) {
-        self.timer.stop();
-        self.buzzer.stop();
+        if let Some(next_state) = match self.state {
+            State::Play { pos, progress } => Some(State::Pause { pos, progress }),
+            _ => None,
+        } {
+            self.timer.stop();
+            self.buzzer.stop();
+            self.state = next_state;
+        }
     }
 
     pub fn next(&mut self) {
-        self.timer.stop();
-        self.buzzer.stop();
-        self.note_pos = 0;
-        match self.play_pos.checked_add(1) {
-            Some(v) if v < self.list.len() - 1 => {
-                self.play_pos = v;
-            }
-            _ => self.play_pos = 0,
-        }
-        self.timer.start();
-        self.timer.set_play_duration(1.secs());
+        let next_pos = self.next_pos();
+        self._start_play(next_pos);
     }
 
     pub fn prev(&mut self) {
-        self.timer.stop();
-        self.buzzer.stop();
-        self.note_pos = 0;
-        match self.play_pos.checked_sub(1) {
-            Some(v) => self.play_pos = v,
-            _ => self.play_pos = self.list.len() - 1,
-        }
-        self.timer.start();
-        self.timer.set_play_duration(1.secs());
+        let prev_pos = self.prev_pos();
+        self._start_play(prev_pos);
     }
 
-    pub fn handle_play_event(&mut self) -> Event {
+    pub fn handle_play_event(&mut self) {
         defmt::debug!("player::tick {}", self.timer.now());
-        let mut event = Event::Unknow;
-        let play_fired = self.timer.check_play();
-        let next_fired = self.timer.check_next();
-        if let Some(melody) = self.list.get(self.play_pos) {
-            if play_fired {
-                let buzzer = &self.buzzer;
-                let timer = &self.timer;
-                if let Some((tone, delay_ms)) = melody.get(self.note_pos) {
-                    buzzer.tone(tone, self.volume);
-                    timer.set_play_duration((delay_ms * 1_000).micros());
-                    timer.set_next_duration((delay_ms * 900).micros());
-                    event = Event::PlayNote;
-                } else {
-                    self.note_pos = 0;
-                    self.timer.stop();
+        if let State::Play { pos, progress } = self.state {
+            let play_fired = self.timer.check_play();
+            let next_fired = self.timer.check_next();
+
+            if let Some(melody) = self.list.get(pos) {
+                if play_fired {
+                    let buzzer = &self.buzzer;
+                    let timer = &self.timer;
+                    if let Some((tone, delay_ms)) = melody.get(progress) {
+                        // play that note for 90% duration, leaving 10% pause
+                        buzzer.tone(tone, self.volume);
+                        timer.set_play_duration((delay_ms * 1_000).micros());
+                        timer.set_next_duration((delay_ms * 900).micros());
+                    } else {
+                        self._start_play(pos);
+                    }
+                } else if next_fired {
+                    self.state = State::Play {
+                        pos,
+                        progress: progress + 1,
+                    };
                     self.buzzer.stop();
-                    self.timer.start();
-                    self.timer.set_play_duration(1.secs());
-                    event = Event::Replay;
                 }
-            } else if next_fired {
-                self.note_pos += 1;
-                self.buzzer.stop();
-                event = Event::NextNote;
             }
         }
-        event
+    }
+
+    fn prev_pos(&self) -> usize {
+        let max_pos = self.list.len() - 1;
+        let pos = match self.state {
+            State::Play { pos, .. } => pos,
+            State::Pause { pos, .. } => pos,
+            State::Stop => 0,
+        };
+
+        if pos == 0 {
+            max_pos
+        } else {
+            pos - 1
+        }
+    }
+
+    fn next_pos(&self) -> usize {
+        let max_pos = self.list.len() - 1;
+        let pos = match self.state {
+            State::Play { pos, .. } => pos,
+            State::Pause { pos, .. } => pos,
+            State::Stop => 0,
+        };
+
+        if pos == max_pos {
+            0
+        } else {
+            pos + 1
+        }
+    }
+
+    fn _start_play(&mut self, pos: usize) {
+        self.stop();
+        self.state = State::Play {
+            pos: pos,
+            progress: 0,
+        };
+        self.timer.start();
+        self.timer.set_play_duration(DEFAULT_PLAY_DURATION);
     }
 }
 

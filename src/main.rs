@@ -140,15 +140,9 @@ mod app {
 
         defmt::debug!("btn1 event: {:?}", &event);
         ctx.shared.player.lock(|ply| match event {
-            Click => {
-                ply.set_volmue(ply.volume().saturating_sub(10));
-            }
-            LongPressStart | LongPressDuring | LongPressStop => {
-                ply.set_volmue(ply.volume().saturating_sub(1));
-            }
-            DoubleClick => {
-                ply.prev();
-            }
+            Click => ply.volume_sub(10),
+            LongPressStart | LongPressDuring | LongPressStop => ply.volume_sub(1),
+            DoubleClick => ply.prev(),
             _ => {}
         })
     }
@@ -159,15 +153,9 @@ mod app {
 
         defmt::debug!("btn2 event: {:?}", &event);
         ctx.shared.player.lock(|ply| match event {
-            Click => {
-                ply.set_volmue(ply.volume().saturating_add(10));
-            }
-            LongPressStart | LongPressDuring | LongPressStop => {
-                ply.set_volmue(ply.volume().saturating_add(1));
-            }
-            DoubleClick => {
-                ply.next();
-            }
+            Click => ply.volume_add(10),
+            LongPressStart | LongPressDuring | LongPressStop => ply.volume_add(1),
+            DoubleClick => ply.next(),
             _ => {}
         })
     }

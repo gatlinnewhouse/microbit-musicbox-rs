@@ -120,6 +120,36 @@ melody!(
     F5:2, REST:4]
 );
 
+// Tetris Theme (Korobeniki)
+// https://musescore.com/user/28837378/scores/5144713
+melody!(
+    name = TETRIS, tempo = 149, beat = 4, // bpm found here: https://getsongbpm.com/song/tetris-theme-a-korobeiniki/EqJvoY
+    [E5:4, B5:8, C5:8, D5:4, C5:8, B5:8, // 1st line
+    A5:4, A5:8, C5:8, E5:4, D5:8, C5:8,
+    B5:-4, C5:8, D5:4, E5:4,
+    C5:4, A5:4, A5:4, REST:4],
+    [REST:8, D5:4, F5:8, A6:4, G5:8, F5:8, // 2nd line
+    E5:-4, C5:8, E5:4, D5:8, C5:8,
+    B5:-4, C5:8, D5:4, E5:4,
+    C5:4, A5:4, A5:4, REST:4],
+    [E5:2, C5:2, // 3rd line
+    D5:2, B5:2,
+    C5:2, A5:2,
+    GS5:1],
+    [E5:2, C5:2, // 4th line
+    D5:2, B5:2,
+    C5:4, E5:4, A6:4, A6:4,
+    GS5:1],
+    [E5:4, B5:8, C5:8, D5:4, C5:8, B5:8, // 1st line repeats on 5th
+    A5:4, A5:8, C5:8, E5:4, D5:8, C5:8,
+    B5:-4, C5:8, D5:4, E5:4,
+    C5:4, A5:4, A5:4, REST:4],
+    [REST:8, D5:4, F5:8, A6:4, G5:8, F5:8, // 6th line
+    REST:8, E5:4, C5:8, E5:4, D5:8, C5:8,
+    REST:8, B5:4, C5:8, D5:4, E5:4,
+    REST:8, C5:4, A5:8, A5:4, REST:4]
+);
+
 melody!(
     name = SUPER_MARIOBROS, tempo = 200, beat = 4,
     [E5:8, E5:8, REST:8, E5:8, REST:8, C5:8, E5:8, //1

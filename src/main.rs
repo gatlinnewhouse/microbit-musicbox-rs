@@ -34,6 +34,7 @@ mod app {
         melody::GAME_OF_THRONES,
         melody::MERRY_CHRISTMAS,
         melody::HAPPY_BIRTHDAY,
+        melody::TETRIS,
     ];
 
     #[shared]
